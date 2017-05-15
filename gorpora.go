@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"unicode"
+
+	"github.com/vseledkin/gorpora/cld2"
 )
 
 func NormalizeHtmlEntities() {
@@ -29,6 +31,28 @@ func Split() {
 		}
 		os.Stdout.WriteString(split2Tokens(line))
 		os.Stdout.WriteString("\n")
+	}
+}
+
+func FilterLanguage(languages []string) {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		language := cld2.Detect(line)
+		accept := false
+		for _, lang := range languages {
+			if language == lang {
+				accept = true
+				break
+			}
+		}
+		if accept {
+			os.Stdout.WriteString(split2Tokens(line))
+			os.Stdout.WriteString("\n")
+		}
 	}
 }
 
