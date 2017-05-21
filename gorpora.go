@@ -2,8 +2,11 @@ package gorpora
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"html"
+	"log"
 	"os"
 	"strings"
 	"unicode"
@@ -34,6 +37,44 @@ func Split() {
 	}
 }
 
+func GetMD5Hash(bytes []byte) string {
+	hasher := md5.New()
+	hasher.Write(bytes)
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func Unique(DEBUG bool) {
+	reader := bufio.NewReader(os.Stdin)
+	dic := make(map[string]interface{})
+	lineCount := 0
+	var empty interface{}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		lineCount++
+		hash := GetMD5Hash([]byte(line))
+
+		if _, ok := dic[hash]; ok {
+			if DEBUG {
+				os.Stdout.WriteString("DUBLICATE: " + line)
+				//os.Stdout.Write([]byte{'\n'})
+			}
+		} else {
+			dic[hash] = empty
+			if !DEBUG {
+				os.Stdout.WriteString(line)
+				//os.Stdout.Write([]byte{'\n'})
+			}
+		}
+	}
+
+	log.Println(lineCount, "lines total")
+	log.Println(len(dic), "unique lines")
+	log.Println(lineCount-len(dic), "non unique lines")
+}
+
 func FilterLanguage(languages []string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -50,8 +91,8 @@ func FilterLanguage(languages []string) {
 			}
 		}
 		if accept {
-			os.Stdout.WriteString(split2Tokens(line))
-			os.Stdout.WriteString("\n")
+			os.Stdout.WriteString(line)
+			//os.Stdout.WriteString("\n")
 		}
 	}
 }
