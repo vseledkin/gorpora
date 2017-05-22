@@ -11,7 +11,7 @@ import (
 
 const (
 	normalizeHtmlEntities = "normalize.html.entities"
-	split                 = "split"
+	tokenize              = "tokenize"
 	unique                = "unique"
 	filterLanguage        = "filter.language"
 )
@@ -38,9 +38,9 @@ func main() {
 	normalizeHtmlEntitiesCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	normalizeHtmlEntitiesCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
 
-	splitCommand := flag.NewFlagSet(split, flag.ExitOnError)
-	splitCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
-	splitCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
+	tokenizeCommand := flag.NewFlagSet(tokenize, flag.ExitOnError)
+	tokenizeCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
+	tokenizeCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
 	uniqueCommand := flag.NewFlagSet(unique, flag.ExitOnError)
 	uniqueCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
@@ -59,8 +59,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", normalizeHtmlEntities)
 		normalizeHtmlEntitiesCommand.PrintDefaults()
 
-		fmt.Fprintf(os.Stderr, "%s\n", split)
-		splitCommand.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "%s\n", tokenize)
+		tokenizeCommand.PrintDefaults()
 
 		fmt.Fprintf(os.Stderr, "%s\n", filterLanguage)
 		filterLanguageCommand.PrintDefaults()
@@ -82,8 +82,8 @@ func main() {
 	case normalizeHtmlEntities:
 		normalizeHtmlEntitiesCommand.Parse(os.Args[2:])
 
-	case split:
-		splitCommand.Parse(os.Args[2:])
+	case tokenize:
+		tokenizeCommand.Parse(os.Args[2:])
 
 	case filterLanguage:
 		filterLanguageCommand.Parse(os.Args[2:])
@@ -104,7 +104,7 @@ func main() {
 	}
 
 	// SPLIT COMMAND ISSUED
-	if splitCommand.Parsed() {
+	if tokenizeCommand.Parsed() {
 		gorpora.Split()
 		return
 	}
