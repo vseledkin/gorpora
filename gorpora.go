@@ -59,8 +59,8 @@ func Unique(DEBUG bool) {
 		if _, ok := dic[hash]; ok {
 			if DEBUG {
 				os.Stdout.WriteString("DUBLICATE: " + line)
-				dic[hash] += 1
 			}
+			dic[hash] += 1
 		} else {
 			dic[hash] = 1
 			if !DEBUG {
