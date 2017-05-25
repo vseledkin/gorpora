@@ -12,6 +12,8 @@ import (
 	"unicode"
 
 	"github.com/vseledkin/gorpora/cld2"
+	"gopkg.in/neurosnap/sentences.v1"
+	"gopkg.in/neurosnap/sentences.v1/english"
 )
 
 func NormalizeHtmlEntities() {
@@ -34,6 +36,32 @@ func Split() {
 		}
 		os.Stdout.WriteString(split2Tokens(line))
 		os.Stdout.WriteString("\n")
+	}
+}
+
+var SentenceTokenizer *sentences.DefaultSentenceTokenizer
+var newLineReplacer = strings.NewReplacer("\n", " ", "\r", " ")
+
+func Sentesize() {
+	reader := bufio.NewReader(os.Stdin)
+	var err error
+	SentenceTokenizer, err = english.NewSentenceTokenizer(nil)
+	if err != nil {
+		panic(err)
+	}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		for _, s := range SentenceTokenizer.Tokenize(line) {
+			sent := newLineReplacer.Replace(s.Text)
+			sent = strings.TrimSpace(sent)
+			if len(sent) > 10 {
+				os.Stdout.WriteString(sent)
+				os.Stdout.WriteString("\n")
+			}
+		}
 	}
 }
 

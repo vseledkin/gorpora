@@ -11,9 +11,10 @@ import (
 
 const (
 	normalizeHtmlEntities = "normalize.html.entities"
-	tokenize              = "tokenize"
+	tokenize              = "word.tokenizer"
 	unique                = "unique"
 	filterLanguage        = "filter.language"
+	sentences             = "sentence.tokenizer"
 )
 
 type arrayFlags []string
@@ -42,6 +43,10 @@ func main() {
 	tokenizeCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	tokenizeCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
+	sentenceCommand := flag.NewFlagSet(sentences, flag.ExitOnError)
+	sentenceCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
+	sentenceCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
+
 	uniqueCommand := flag.NewFlagSet(unique, flag.ExitOnError)
 	uniqueCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	uniqueCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
@@ -61,6 +66,9 @@ func main() {
 
 		fmt.Fprintf(os.Stderr, "%s\n", tokenize)
 		tokenizeCommand.PrintDefaults()
+
+		fmt.Fprintf(os.Stderr, "%s\n", sentences)
+		sentenceCommand.PrintDefaults()
 
 		fmt.Fprintf(os.Stderr, "%s\n", filterLanguage)
 		filterLanguageCommand.PrintDefaults()
@@ -85,6 +93,9 @@ func main() {
 	case tokenize:
 		tokenizeCommand.Parse(os.Args[2:])
 
+	case sentences:
+		sentenceCommand.Parse(os.Args[2:])
+
 	case filterLanguage:
 		filterLanguageCommand.Parse(os.Args[2:])
 
@@ -106,6 +117,12 @@ func main() {
 	// SPLIT COMMAND ISSUED
 	if tokenizeCommand.Parsed() {
 		gorpora.Split()
+		return
+	}
+
+	// SENTENCE COMMAND ISSUED
+	if sentenceCommand.Parsed() {
+		gorpora.Sentesize()
 		return
 	}
 
