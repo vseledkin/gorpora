@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	stripHtml             = "strip.html"
 	normalizeHtmlEntities = "normalize.html.entities"
 	tokenize              = "word.tokenizer"
 	unique                = "unique"
@@ -39,6 +40,8 @@ func main() {
 	normalizeHtmlEntitiesCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	normalizeHtmlEntitiesCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
 
+	stripHtmlCommand := flag.NewFlagSet(stripHtml, flag.ExitOnError)
+
 	tokenizeCommand := flag.NewFlagSet(tokenize, flag.ExitOnError)
 	tokenizeCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	tokenizeCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
@@ -63,6 +66,9 @@ func main() {
 
 		fmt.Fprintf(os.Stderr, "%s\n", normalizeHtmlEntities)
 		normalizeHtmlEntitiesCommand.PrintDefaults()
+
+		fmt.Fprintf(os.Stderr, "%s\n", stripHtml)
+		stripHtmlCommand.PrintDefaults()
 
 		fmt.Fprintf(os.Stderr, "%s\n", tokenize)
 		tokenizeCommand.PrintDefaults()
@@ -90,6 +96,9 @@ func main() {
 	case normalizeHtmlEntities:
 		normalizeHtmlEntitiesCommand.Parse(os.Args[2:])
 
+	case stripHtml:
+		stripHtmlCommand.Parse(os.Args[2:])
+
 	case tokenize:
 		tokenizeCommand.Parse(os.Args[2:])
 
@@ -111,6 +120,11 @@ func main() {
 	// NORMALIZE ENTITIES COMMAND ISSUED
 	if normalizeHtmlEntitiesCommand.Parsed() {
 		gorpora.NormalizeHtmlEntities()
+		return
+	}
+	// STRIP HTML ENTITIES COMMAND ISSUED
+	if stripHtmlCommand.Parsed() {
+		gorpora.StripHtml()
 		return
 	}
 
