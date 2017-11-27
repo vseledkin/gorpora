@@ -4,18 +4,19 @@ import (
 	"bufio"
 	"crypto/md5"
 	"encoding/hex"
-	"fmt"
 	"html"
 	"log"
 	"os"
 	"strings"
-	"unicode"
 
 	"bytes"
 
+	"unicode/utf8"
+
 	"github.com/vseledkin/gorpora/cld2"
-	"gopkg.in/neurosnap/sentences.v1"
-	"gopkg.in/neurosnap/sentences.v1/english"
+	"github.com/vseledkin/gorpora/udpipe"
+	"fmt"
+	"unicode"
 )
 
 func NormalizeHtmlEntities() {
@@ -93,38 +94,74 @@ func StripHtml() {
 	}
 }
 
-func Split() {
+func Split(use_udpipe, output_lemmas bool) {
+	if use_udpipe {
+		PARSER = new(udpipe.Parser)
+		PARSER.Start()
+		defer PARSER.Close()
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			break
 		}
-		os.Stdout.WriteString(split2Tokens(line))
+		line = strings.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		if use_udpipe {
+			sentences, err := PARSER.Parse(line)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			var tokens []string
+			for _, sentence := range sentences {
+				for _, token := range sentence.Tokens {
+					if output_lemmas {
+						tokens = append(tokens, token.Lemma)
+					} else {
+						tokens = append(tokens, token.Word)
+					}
+				}
+			}
+			os.Stdout.WriteString(strings.Join(tokens, " "))
+		} else {
+			os.Stdout.WriteString(split2Tokens(line))
+		}
 		os.Stdout.WriteString("\n")
 	}
 }
 
-var SentenceTokenizer *sentences.DefaultSentenceTokenizer
-var newLineReplacer = strings.NewReplacer("\n", " ", "\r", " ")
+var PARSER *udpipe.Parser
 
-func Sentesize() {
+func Sentesize(min, max int) {
+	PARSER = new(udpipe.Parser)
+	PARSER.Start()
+	defer PARSER.Close()
+
 	reader := bufio.NewReader(os.Stdin)
-	var err error
-	SentenceTokenizer, err = english.NewSentenceTokenizer(nil)
-	if err != nil {
-		panic(err)
-	}
+
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			break
 		}
-		for _, s := range SentenceTokenizer.Tokenize(line) {
-			sent := newLineReplacer.Replace(s.Text)
-			sent = strings.TrimSpace(sent)
-			if len(sent) > 10 {
-				os.Stdout.WriteString(sent)
+		line = strings.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		sentences, err := PARSER.Parse(line)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		for _, sentence := range sentences {
+			L := utf8.RuneCountInString(sentence.Body)
+			if L >= min && L <= max {
+				os.Stdout.WriteString(sentence.Body)
 				os.Stdout.WriteString("\n")
 			}
 		}

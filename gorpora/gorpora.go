@@ -21,9 +21,12 @@ const (
 type arrayFlags []string
 
 var (
-	MAX       int
+	MAX_LEN   int
+	MIN_LEN   int
 	DEBUG     bool
 	languages arrayFlags
+	LEMMAS    bool
+	UDPIPE    bool
 )
 
 func (i *arrayFlags) Set(value string) error {
@@ -37,25 +40,25 @@ func (i *arrayFlags) String() string {
 func main() {
 	log.SetOutput(os.Stderr)
 	normalizeHtmlEntitiesCommand := flag.NewFlagSet(normalizeHtmlEntities, flag.ExitOnError)
-	normalizeHtmlEntitiesCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
+	normalizeHtmlEntitiesCommand.IntVar(&MAX_LEN, "max", 0, "maximum number of lines to process")
 	normalizeHtmlEntitiesCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
 
 	stripHtmlCommand := flag.NewFlagSet(stripHtml, flag.ExitOnError)
 
 	tokenizeCommand := flag.NewFlagSet(tokenize, flag.ExitOnError)
-	tokenizeCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
+	tokenizeCommand.BoolVar(&UDPIPE, "udpipe", false, "use Udpipe as tokenizer")
+	tokenizeCommand.BoolVar(&LEMMAS, "lemma", false, "output lemmas instead of words")
 	tokenizeCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
 	sentenceCommand := flag.NewFlagSet(sentences, flag.ExitOnError)
-	sentenceCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
+	sentenceCommand.IntVar(&MAX_LEN, "max", 1000000, "maximum sentence length in chars")
+	sentenceCommand.IntVar(&MIN_LEN, "min", 10, "minimun sentence length in chars")
 	sentenceCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
 	uniqueCommand := flag.NewFlagSet(unique, flag.ExitOnError)
-	uniqueCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
-	uniqueCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
+	uniqueCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
 	filterLanguageCommand := flag.NewFlagSet(filterLanguage, flag.ExitOnError)
-	filterLanguageCommand.IntVar(&MAX, "max", 0, "maximum number of lines to process")
 	filterLanguageCommand.Var(&languages, "lang", "set of accepted languages")
 	filterLanguageCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
 
@@ -130,13 +133,13 @@ func main() {
 
 	// SPLIT COMMAND ISSUED
 	if tokenizeCommand.Parsed() {
-		gorpora.Split()
+		gorpora.Split(UDPIPE, LEMMAS)
 		return
 	}
 
 	// SENTENCE COMMAND ISSUED
 	if sentenceCommand.Parsed() {
-		gorpora.Sentesize()
+		gorpora.Sentesize(MIN_LEN, MAX_LEN)
 		return
 	}
 
