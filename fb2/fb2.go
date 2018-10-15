@@ -850,10 +850,9 @@ func (b *FB2) fillDescription(d *xml.Decoder) error {
 
 func parseFB2(r io.ReadCloser) (*FB2, error) {
 	decoder := xml.NewDecoder(r)
-	//
+	
 	decoder.CharsetReader = charsetReader
-	//
-	defer r.Close()
+
 	book := new(FB2)
 	// read
 	for {
@@ -917,7 +916,7 @@ func parseDir(input string, output chan interface{}, licence chan Empty) {
 					if f, e := os.Open(fsPath); e != nil {
 						output <- e
 					} else {
-						log.Printf("%s\n", fsPath)
+						log.Printf("-> %s\n", fsPath)
 						<-licence
 						go work(fsPath, output, licence, f, nil)
 					}
@@ -926,13 +925,13 @@ func parseDir(input string, output chan interface{}, licence chan Empty) {
 						output <- e
 					} else {
 						if len(r.File) == 1 {
-							if rc, e := r.File[0].Open(); e != nil {
+							if f, e := r.File[0].Open(); e != nil {
 								r.Close()
 								output <- e
 							} else {
 								log.Printf("%s\n", fsPath)
 								<-licence
-								go work(fsPath, output, licence, rc, r)
+								go work(fsPath, output, licence, f, r)
 							}
 						} else {
 							r.Close()

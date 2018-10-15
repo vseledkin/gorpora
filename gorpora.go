@@ -17,6 +17,10 @@ import (
 	"github.com/vseledkin/gorpora/udpipe"
 	"fmt"
 	"unicode"
+	"archive/zip"
+	"io"
+	"io/ioutil"
+	"path"
 )
 
 func NormalizeHtmlEntities() {
@@ -267,4 +271,69 @@ func split2Tokens(s string) string {
 		split = append(split, token)
 	}
 	return strings.Join(split, " ")
+}
+
+func priltLines(min, max int, r io.ReadCloser, rc *zip.ReadCloser) {
+	defer func() {
+		if e := r.Close(); e != nil {
+			log.Print(e)
+		}
+		if rc != nil {
+			if e := rc.Close(); e != nil {
+				log.Print(e)
+			}
+		}
+	}()
+
+	reader := bufio.NewReader(r)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		line = strings.TrimSpace(line)
+		println(max, min, line, len(line))
+
+		if max <= len(line) && len(line) >= min {
+			os.Stdout.WriteString(line)
+			os.Stdout.WriteString("\n")
+			os.Stdout.Sync()
+		}
+	}
+}
+
+func Collect(min, max int, input, extension string) {
+	if fifos, e := ioutil.ReadDir(input); e != nil {
+		log.Print(e)
+	} else {
+		for _, fifo := range fifos {
+			if fsPath := path.Join(input, fifo.Name()); fifo.IsDir() {
+				Collect(min, max, fsPath, extension)
+			} else {
+				if strings.HasSuffix(strings.ToLower(fsPath), "."+extension) {
+					if f, e := os.Open(fsPath); e != nil {
+						log.Print(e)
+					} else {
+						priltLines(min, max, f, nil)
+					}
+				} else if strings.HasSuffix(strings.ToLower(fsPath), "."+extension+".zip") {
+					if r, e := zip.OpenReader(fsPath); e != nil {
+						log.Print(e)
+					} else {
+						if len(r.File) == 1 {
+							if f, e := r.File[0].Open(); e != nil {
+								r.Close()
+								log.Print(e)
+							} else {
+								priltLines(min, max, f, r)
+							}
+						} else {
+							r.Close()
+							log.Print(fmt.Errorf("expecting one file in archive %s got %d", fsPath, len(r.File)))
+						}
+					}
+				}
+			}
+		}
+	}
 }

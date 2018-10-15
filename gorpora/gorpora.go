@@ -18,6 +18,7 @@ const (
 	filterLanguage        = "filter.language"
 	sentences             = "sentence.tokenizer"
 	fb2text             = "fb2text"
+	collect             = "collect"
 )
 
 type arrayFlags []string
@@ -32,6 +33,7 @@ var (
 	INPUT    string
 	THREADS    int
 	OUTPUT_LINE_ENDING    int
+	EXTENSION  string
 )
 
 func (i *arrayFlags) Set(value string) error {
@@ -44,6 +46,13 @@ func (i *arrayFlags) String() string {
 
 func main() {
 	log.SetOutput(os.Stderr)
+
+	collectCommand := flag.NewFlagSet(collect, flag.ExitOnError)
+	collectCommand.StringVar(&INPUT, "i", "", "directory with files, will be processed recursively")
+	collectCommand.StringVar(&EXTENSION, "e", "txt", "extension of accepted files")
+	collectCommand.IntVar(&MIN_LEN, "min", 0, "minimun line length expressed in utf8 chars to be accepted for output")
+	collectCommand.IntVar(&MAX_LEN, "max", 1000000, "maximum line length expressed in utf8 chars to be accepted for output")
+
 	fb2textCommand := flag.NewFlagSet(fb2text, flag.ExitOnError)
 	fb2textCommand.StringVar(&INPUT, "i", "", "directory with fb2 files, will be processed recursively")
 	fb2textCommand.IntVar(&THREADS, "t", 1, "number of threads for parallel processing of conversion jobs")
@@ -80,6 +89,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s\n", fb2text)
 		fb2textCommand.PrintDefaults()
 
+		fmt.Fprintf(os.Stderr, "%s\n", collect)
+		collectCommand.PrintDefaults()
+
 		fmt.Fprintf(os.Stderr, "%s\n", normalizeHtmlEntities)
 		normalizeHtmlEntitiesCommand.PrintDefaults()
 
@@ -109,6 +121,9 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case collect:
+		collectCommand.Parse(os.Args[2:])
+
 	case fb2text:
 		fb2textCommand.Parse(os.Args[2:])
 
@@ -134,6 +149,12 @@ func main() {
 		log.Printf("%q is not valid command.\n", os.Args[1])
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	// collect tool
+	if collectCommand.Parsed() {
+		gorpora.Collect(MIN_LEN, MAX_LEN, INPUT, EXTENSION)
+		return
 	}
 
 	// fb2 convert tot text
