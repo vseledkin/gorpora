@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/vseledkin/gorpora"
+	"github.com/vseledkin/gorpora/fb2"
 )
 
 const (
@@ -16,6 +17,7 @@ const (
 	unique                = "unique"
 	filterLanguage        = "filter.language"
 	sentences             = "sentence.tokenizer"
+	fb2text             = "fb2text"
 )
 
 type arrayFlags []string
@@ -27,6 +29,9 @@ var (
 	languages arrayFlags
 	LEMMAS    bool
 	UDPIPE    bool
+	INPUT    string
+	THREADS    int
+	OUTPUT_LINE_ENDING    int
 )
 
 func (i *arrayFlags) Set(value string) error {
@@ -39,6 +44,11 @@ func (i *arrayFlags) String() string {
 
 func main() {
 	log.SetOutput(os.Stderr)
+	fb2textCommand := flag.NewFlagSet(fb2text, flag.ExitOnError)
+	fb2textCommand.StringVar(&INPUT, "i", "", "directory with fb2 files, will be processed recursively")
+	fb2textCommand.IntVar(&THREADS, "t", 1, "number of threads for parallel processing of conversion jobs")
+	fb2textCommand.IntVar(&OUTPUT_LINE_ENDING, "l", 1, "number of \n added after each text output block (paragraph)")
+
 	normalizeHtmlEntitiesCommand := flag.NewFlagSet(normalizeHtmlEntities, flag.ExitOnError)
 	normalizeHtmlEntitiesCommand.IntVar(&MAX_LEN, "max", 0, "maximum number of lines to process")
 	normalizeHtmlEntitiesCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
@@ -66,6 +76,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "gorpora <command> arguments\n")
 		fmt.Fprintf(os.Stderr, "commands are:\n")
+
+		fmt.Fprintf(os.Stderr, "%s\n", fb2text)
+		fb2textCommand.PrintDefaults()
 
 		fmt.Fprintf(os.Stderr, "%s\n", normalizeHtmlEntities)
 		normalizeHtmlEntitiesCommand.PrintDefaults()
@@ -96,6 +109,9 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case fb2text:
+		fb2textCommand.Parse(os.Args[2:])
+
 	case normalizeHtmlEntities:
 		normalizeHtmlEntitiesCommand.Parse(os.Args[2:])
 
@@ -118,6 +134,12 @@ func main() {
 		log.Printf("%q is not valid command.\n", os.Args[1])
 		flag.Usage()
 		os.Exit(1)
+	}
+
+	// fb2 convert tot text
+	if fb2textCommand.Parsed() {
+		fb2.ConvertFB2text(INPUT, OUTPUT_LINE_ENDING, THREADS)
+		return
 	}
 
 	// NORMALIZE ENTITIES COMMAND ISSUED
