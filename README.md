@@ -1,6 +1,6 @@
 ## gorpora
 
-Random set utilities for text corpora processing, primarily for machine learning purpoces.
+Random set of utilities for text corpora processing, primarily for machine learning purpoces.
 
 ##### Usage of gorpora:
 
