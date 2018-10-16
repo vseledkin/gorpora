@@ -32,6 +32,7 @@ var (
 	languages          arrayFlags
 	LEMMAS             bool
 	UDPIPE             bool
+	COLLECT_INPUT      string
 	INPUT              string
 	THREADS            int
 	OUTPUT_LINE_ENDING int
@@ -50,7 +51,7 @@ func main() {
 	log.SetOutput(os.Stderr)
 
 	collectCommand := flag.NewFlagSet(collect, flag.ExitOnError)
-	collectCommand.StringVar(&INPUT, "i", "", "directory with files, will be processed recursively")
+	collectCommand.StringVar(&COLLECT_INPUT, "i", ".", "directory with files, will be processed recursively")
 	collectCommand.StringVar(&EXTENSION, "e", "txt", "extension of accepted files")
 	collectCommand.IntVar(&MIN_COLLECT_LEN, "min", 1, "minimun line length expressed in utf8 chars to be accepted for output")
 	collectCommand.IntVar(&MAX_COLLECT_LEN, "max", 1000000, "maximum line length expressed in utf8 chars to be accepted for output")
@@ -155,7 +156,7 @@ func main() {
 
 	// collect tool
 	if collectCommand.Parsed() {
-		gorpora.Collect(MIN_COLLECT_LEN, MAX_COLLECT_LEN, INPUT, EXTENSION)
+		gorpora.Collect(MIN_COLLECT_LEN, MAX_COLLECT_LEN, COLLECT_INPUT, EXTENSION, 0)
 		return
 	}
 

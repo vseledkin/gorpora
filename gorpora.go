@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"bytes"
 
@@ -23,6 +24,12 @@ import (
 	"github.com/vseledkin/gorpora/cld2"
 	"github.com/vseledkin/gorpora/udpipe"
 )
+
+var startTime time.Time
+
+func init() {
+	startTime = time.Now().Add(-time.Second)
+}
 
 func NormalizeHtmlEntities() {
 	reader := bufio.NewReader(os.Stdin)
@@ -274,7 +281,7 @@ func split2Tokens(s string) string {
 	return strings.Join(split, " ")
 }
 
-func priltLines(min, max int, r io.ReadCloser, rc *zip.ReadCloser) {
+func priltLines(min, max int, r io.ReadCloser, rc *zip.ReadCloser) (collectedLineCount, filteredLineCount int) {
 	defer func() {
 		if e := r.Close(); e != nil {
 			log.Print(e)
@@ -298,34 +305,71 @@ func priltLines(min, max int, r io.ReadCloser, rc *zip.ReadCloser) {
 		if max >= L && L >= min {
 			os.Stdout.WriteString(line)
 			os.Stdout.WriteString("\n")
+			collectedLineCount++
+		} else {
+			filteredLineCount++
 		}
 	}
+	return
 }
 
-func Collect(min, max int, input, extension string) {
+func Collect(min, max int, input, extension string, level int) (collectedLineCount, filteredLineCount int) {
+	var collected, filtered int
+	log.Printf("Reading dir %s", input)
 	if fifos, e := ioutil.ReadDir(input); e != nil {
 		log.Print(e)
 	} else {
 		for _, fifo := range fifos {
 			if fsPath := path.Join(input, fifo.Name()); fifo.IsDir() {
-				Collect(min, max, fsPath, extension)
+				if fifo.ModTime().UnixNano() >= startTime.UnixNano() {
+					log.Printf("Directory %s is modifyed at %s after program start %s, cannot continue", fsPath, fifo.ModTime(), startTime)
+					os.Exit(1)
+				}
+				//log.Print("/" + fsPath)
+				collected, filtered = Collect(min, max, fsPath, extension, level+1)
+				collectedLineCount += collected
+				filteredLineCount += filtered
+				if level == 0 {
+					log.Printf("%cCollected: %d Filltered: %d", 13, collectedLineCount, filteredLineCount)
+				}
 			} else {
 				if strings.HasSuffix(strings.ToLower(fsPath), "."+extension) {
-					if f, e := os.Open(fsPath); e != nil {
+					if fifo.ModTime().UnixNano() >= startTime.UnixNano() {
+						log.Printf("File %s is modifyed at %s after program start %s, cannot continue", fsPath, fifo.ModTime(), startTime)
+						os.Exit(1)
+					}
+					if f, e := os.OpenFile(fsPath, os.O_RDONLY|os.O_EXCL, 0); e != nil {
 						log.Print(e)
 					} else {
-						priltLines(min, max, f, nil)
+						//log.Print(fsPath)
+						//log.Printf("File %s is modifyed at %s program start %s", fsPath, fifo.ModTime(), startTime)
+						collected, filtered = priltLines(min, max, f, nil)
+						collectedLineCount += collected
+						filteredLineCount += filtered
+						if level == 0 {
+							log.Printf("%cCollected: %d Filltered: %d", 13, collectedLineCount, filteredLineCount)
+						}
 					}
 				} else if strings.HasSuffix(strings.ToLower(fsPath), "."+extension+".zip") {
+					if fifo.ModTime().UnixNano() >= startTime.UnixNano() {
+						log.Printf("File %s is modifyed at %s after program start %s, cannot continue", fsPath, fifo.ModTime(), startTime)
+						os.Exit(1)
+					}
 					if r, e := zip.OpenReader(fsPath); e != nil {
 						log.Print(e)
 					} else {
+						//log.Print(fsPath)
 						if len(r.File) == 1 {
 							if f, e := r.File[0].Open(); e != nil {
 								r.Close()
 								log.Print(e)
 							} else {
-								priltLines(min, max, f, r)
+								collected, filtered = priltLines(min, max, f, r)
+								collectedLineCount += collected
+								filteredLineCount += filtered
+								if level == 0 {
+									log.Printf("%cCollected: %d Filltered: %d", 13, collectedLineCount, filteredLineCount)
+								}
 							}
 						} else {
 							r.Close()
@@ -336,4 +380,5 @@ func Collect(min, max int, input, extension string) {
 			}
 		}
 	}
+	return
 }
