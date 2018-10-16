@@ -493,15 +493,23 @@ func getText(parent xml.StartElement, d *xml.Decoder) (text string, e error) {
 }
 
 func skip(skipToken xml.StartElement, d *xml.Decoder) (e error) {
+	var skipCount = 1 // we expect 1 EndElement if no other inner elements with the same name encountered
 	for {
 		var token xml.Token
 		if token, e = d.Token(); e != nil {
 			return
 		}
 		switch t := token.(type) {
+		case xml.StartElement:
+			if t.Name.Local == skipToken.Name.Local {
+				skipCount++
+			}
 		case xml.EndElement:
 			if t.Name.Local == skipToken.Name.Local {
-				return
+				skipCount--
+				if skipCount==0 {
+					return
+				}
 			}
 		}
 	}
