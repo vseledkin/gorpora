@@ -17,23 +17,25 @@ const (
 	unique                = "unique"
 	filterLanguage        = "filter.language"
 	sentences             = "sentence.tokenizer"
-	fb2text             = "fb2text"
-	collect             = "collect"
+	fb2text               = "fb2text"
+	collect               = "collect"
 )
 
 type arrayFlags []string
 
 var (
-	MAX_LEN   int
-	MIN_LEN   int
-	DEBUG     bool
-	languages arrayFlags
-	LEMMAS    bool
-	UDPIPE    bool
-	INPUT    string
-	THREADS    int
-	OUTPUT_LINE_ENDING    int
-	EXTENSION  string
+	MAX_LEN            int
+	MIN_LEN            int
+	MAX_COLLECT_LEN    int
+	MIN_COLLECT_LEN    int
+	DEBUG              bool
+	languages          arrayFlags
+	LEMMAS             bool
+	UDPIPE             bool
+	INPUT              string
+	THREADS            int
+	OUTPUT_LINE_ENDING int
+	EXTENSION          string
 )
 
 func (i *arrayFlags) Set(value string) error {
@@ -50,8 +52,8 @@ func main() {
 	collectCommand := flag.NewFlagSet(collect, flag.ExitOnError)
 	collectCommand.StringVar(&INPUT, "i", "", "directory with files, will be processed recursively")
 	collectCommand.StringVar(&EXTENSION, "e", "txt", "extension of accepted files")
-	collectCommand.IntVar(&MIN_LEN, "min", 0, "minimun line length expressed in utf8 chars to be accepted for output")
-	collectCommand.IntVar(&MAX_LEN, "max", 1000000, "maximum line length expressed in utf8 chars to be accepted for output")
+	collectCommand.IntVar(&MIN_COLLECT_LEN, "min", 1, "minimun line length expressed in utf8 chars to be accepted for output")
+	collectCommand.IntVar(&MAX_COLLECT_LEN, "max", 1000000, "maximum line length expressed in utf8 chars to be accepted for output")
 
 	fb2textCommand := flag.NewFlagSet(fb2text, flag.ExitOnError)
 	fb2textCommand.StringVar(&INPUT, "i", "", "directory with fb2 files, will be processed recursively")
@@ -153,7 +155,7 @@ func main() {
 
 	// collect tool
 	if collectCommand.Parsed() {
-		gorpora.Collect(MIN_LEN, MAX_LEN, INPUT, EXTENSION)
+		gorpora.Collect(MIN_COLLECT_LEN, MAX_COLLECT_LEN, INPUT, EXTENSION)
 		return
 	}
 

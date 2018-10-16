@@ -13,14 +13,15 @@ import (
 
 	"unicode/utf8"
 
-	"github.com/vseledkin/gorpora/cld2"
-	"github.com/vseledkin/gorpora/udpipe"
-	"fmt"
-	"unicode"
 	"archive/zip"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"path"
+	"unicode"
+
+	"github.com/vseledkin/gorpora/cld2"
+	"github.com/vseledkin/gorpora/udpipe"
 )
 
 func NormalizeHtmlEntities() {
@@ -286,18 +287,17 @@ func priltLines(min, max int, r io.ReadCloser, rc *zip.ReadCloser) {
 	}()
 
 	reader := bufio.NewReader(r)
+	var L int
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			break
 		}
 		line = strings.TrimSpace(line)
-		println(max, min, line, len(line))
-
-		if max <= len(line) && len(line) >= min {
+		L = utf8.RuneCountInString(line)
+		if max >= L && L >= min {
 			os.Stdout.WriteString(line)
 			os.Stdout.WriteString("\n")
-			os.Stdout.Sync()
 		}
 	}
 }

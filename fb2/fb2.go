@@ -850,7 +850,7 @@ func (b *FB2) fillDescription(d *xml.Decoder) error {
 
 func parseFB2(r io.ReadCloser) (*FB2, error) {
 	decoder := xml.NewDecoder(r)
-	
+
 	decoder.CharsetReader = charsetReader
 
 	book := new(FB2)
