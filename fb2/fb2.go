@@ -15,6 +15,7 @@ import (
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
 	"archive/zip"
+	"bytes"
 )
 
 // Author struct
@@ -84,8 +85,8 @@ func (s *Section) addTitle(title *P) {
 
 // Body struct
 type Body struct {
-	Name     string `json:",omitempty"`
-	Title    []*P   `json:",omitempty"`
+	Name     string     `json:",omitempty"`
+	Title    []*P       `json:",omitempty"`
 	Epigraph []*P
 	Section  []*Section `json:",omitempty"`
 }
@@ -507,7 +508,7 @@ func skip(skipToken xml.StartElement, d *xml.Decoder) (e error) {
 		case xml.EndElement:
 			if t.Name.Local == skipToken.Name.Local {
 				skipCount--
-				if skipCount==0 {
+				if skipCount == 0 {
 					return
 				}
 			}
@@ -753,7 +754,7 @@ func (b *FB2) fillTitleInfo(d *xml.Decoder) error {
 						return e
 					}
 				case "src-lang":
-					if b.Language, e = getText(t, d); e != nil {
+					if b.SrcLanguage, e = getText(t, d); e != nil {
 						return e
 					}
 				case "image":
@@ -906,7 +907,7 @@ func work(fsPath string, output chan interface{}, license chan Empty, r io.ReadC
 	if book, e := parseFB2(r); e != nil {
 		output <- e
 	} else {
-		book.File = fsPath + ".txt"
+		book.File = fmt.Sprintf("%s.%s.%s.txt",fsPath, book.SrcLanguage,book.Language)
 		output <- book
 	}
 }
@@ -946,6 +947,65 @@ func parseDir(input string, output chan interface{}, licence chan Empty) {
 							output <- fmt.Errorf("expecting one file in archive %s got %d", fsPath, len(r.File))
 						}
 					}
+				} else if strings.HasSuffix(strings.ToLower(fifo.Name()), ".zip") {
+					if r, e := zip.OpenReader(fsPath); e != nil {
+						output <- e
+					} else {
+						for _, innerArchive := range r.File {
+							if strings.HasSuffix(strings.ToLower(innerArchive.Name), ".zip") {
+								log.Print("InnerArchive_" + innerArchive.Name)
+								if innerArchiveReader, e := innerArchive.Open(); e != nil {
+									output <- e
+								} else {
+									if b, e := ioutil.ReadAll(innerArchiveReader); e != nil {
+										log.Printf("not in buffer %s\n", fsPath+"_"+innerArchive.Name)
+										output <- e
+									} else {
+										log.Printf("in buffer %s\n", fsPath+"_"+innerArchive.Name)
+										innerArchiveReader.Close()
+
+										if innerFiles, e := zip.NewReader(bytes.NewReader(b), int64(innerArchive.CompressedSize64)); e != nil {
+											output <- e
+										} else {
+											for _, fb2file := range innerFiles.File {
+												if fb2fileReader, e := fb2file.Open(); e != nil {
+													output <- e
+												} else {
+													log.Printf("%s--%s--%s", fsPath, innerArchive.Name, fb2file.Name)
+													if e = os.MkdirAll(path.Join(fsPath+"_dir"), os.ModePerm); e != nil {
+														output <- e
+													} else {
+														<-licence
+														go work(path.Join(fsPath+"_dir", innerArchive.Name+fb2file.Name), output, licence, fb2fileReader, nil)
+													}
+												}
+											}
+										}
+									}
+									//for _, innerArchive1 := range r1.File {
+									//	if strings.HasSuffix(strings.ToLower(innerArchive1.Name), ".fb2") {
+									//		log.Print(innerArchive1.Name)
+									//	}
+									//}
+								}
+							}
+						}
+					}
+					/*
+											if len(r.File) == 1 {
+												if f, e := r.File[0].Open(); e != nil {
+													r.Close()
+													output <- e
+												} else {
+													log.Printf("%s\n", fsPath)
+													<-licence
+													go work(fsPath, output, licence, f, r)
+												}
+											} else {
+												r.Close()
+												output <- fmt.Errorf("expecting one file in archive %s got %d", fsPath, len(r.File))
+											}
+					*/
 				}
 			}
 		}
