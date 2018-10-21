@@ -50,11 +50,7 @@ func (i *arrayFlags) String() string {
 func main() {
 	log.SetOutput(os.Stderr)
 
-	collectCommand := flag.NewFlagSet(collect, flag.ExitOnError)
-	collectCommand.StringVar(&COLLECT_INPUT, "i", ".", "directory with files, will be processed recursively")
-	collectCommand.StringVar(&EXTENSION, "e", "txt", "extension of accepted files")
-	collectCommand.IntVar(&MIN_COLLECT_LEN, "min", 1, "minimun line length expressed in utf8 chars to be accepted for output")
-	collectCommand.IntVar(&MAX_COLLECT_LEN, "max", 1000000, "maximum line length expressed in utf8 chars to be accepted for output")
+	
 
 	fb2textCommand := flag.NewFlagSet(fb2text, flag.ExitOnError)
 	fb2textCommand.StringVar(&INPUT, "i", "", "directory with fb2 files, will be processed recursively")
@@ -80,9 +76,7 @@ func main() {
 	uniqueCommand := flag.NewFlagSet(unique, flag.ExitOnError)
 	uniqueCommand.BoolVar(&DEBUG, "debug", false, "do nothing only print use cases")
 
-	filterLanguageCommand := flag.NewFlagSet(filterLanguage, flag.ExitOnError)
-	filterLanguageCommand.Var(&languages, "lang", "set of accepted languages")
-	filterLanguageCommand.BoolVar(&DEBUG, "debug", false, "do othing only print use cases")
+	
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -124,8 +118,7 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case collect:
-		collectCommand.Parse(os.Args[2:])
+	
 
 	case fb2text:
 		fb2textCommand.Parse(os.Args[2:])
@@ -142,9 +135,6 @@ func main() {
 	case sentences:
 		sentenceCommand.Parse(os.Args[2:])
 
-	case filterLanguage:
-		filterLanguageCommand.Parse(os.Args[2:])
-
 	case unique:
 		uniqueCommand.Parse(os.Args[2:])
 
@@ -152,12 +142,6 @@ func main() {
 		log.Printf("%q is not valid command.\n", os.Args[1])
 		flag.Usage()
 		os.Exit(1)
-	}
-
-	// collect tool
-	if collectCommand.Parsed() {
-		gorpora.Collect(MIN_COLLECT_LEN, MAX_COLLECT_LEN, COLLECT_INPUT, EXTENSION, 0)
-		return
 	}
 
 	// fb2 convert tot text
