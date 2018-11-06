@@ -8,6 +8,7 @@ import (
 	"strings"
 	"fmt"
 	"sort"
+	"strconv"
 )
 
 var DictionaryCommand *cobra.Command
@@ -81,4 +82,52 @@ func Dic() error {
 
 	log.Printf("Collected %d tokens\n", len(tokens))
 	return nil
+}
+
+type Word struct {
+	ID    uint32
+	Word  string
+	Count uint32
+}
+
+type Dictionary struct {
+	Words map[string]*Word
+	Index []*Word
+}
+
+func (d *Dictionary) Len() int {
+	return len(d.Words)
+}
+
+func LoadDictionary(path string) (d *Dictionary, e error) {
+	var f *os.File
+	if f, e = os.Open(path); e != nil {
+		return
+	}
+	defer f.Close()
+	reader := bufio.NewReader(f)
+	d = new(Dictionary)
+	d.Words = make(map[string]*Word)
+	for {
+		if line, e := reader.ReadString('\n'); e != nil {
+			break
+		} else {
+			if len(line) == 0 {
+				continue
+			}
+			parsedLine := strings.Fields(line)
+			id := len(d.Words)
+			word := parsedLine[0]
+			var count int
+			count, e = strconv.Atoi(parsedLine[1])
+			w := Word{uint32(id), word, uint32(count)}
+			d.Words[w.Word] = &w
+		}
+	}
+	d.Index = make([]*Word, d.Len())
+	for _, w := range d.Words {
+		d.Index[w.ID] = w
+	}
+
+	return
 }
