@@ -1,10 +1,10 @@
 package dic
 
 import (
-	"time"
-	"sort"
-	"log"
 	"container/heap"
+	"log"
+	"sort"
+	"time"
 )
 
 /*
@@ -52,10 +52,13 @@ func BuildHuffmanTreeFromDictionary(d *Dictionary) (codes [][]byte, points [][]u
 	th := make(TreeHeap, L)
 	var i int
 	for k, wc := range d.Words {
-		th[i].Word = &Word{Count: wc.Count, Word: k}
+		th[i].Word = &Word{wc.ID, wc.Count, k}
 		i++
 	}
 	sort.Sort(sort.Reverse(th))
+	//for _, t := range th{
+	//	log.Printf("%+v", t)
+	//}
 	root = buildTree(th)
 	var maxDepth int
 	points = make([][]uint32, L)

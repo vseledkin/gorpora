@@ -1,23 +1,27 @@
 package embed
 
 import (
-	"github.com/spf13/cobra"
+	"bufio"
+	"fmt"
 	"log"
-	"github.com/vseledkin/gorpora/dic"
 	"math"
 	"math/rand"
-	"time"
-	"github.com/vseledkin/gorpora/asm"
 	"os"
-	"bufio"
-	"strings"
 	"runtime"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/vseledkin/gorpora/asm"
+	"github.com/vseledkin/gorpora/dic"
+	"encoding/json"
 )
 
 var EmbedCommand *cobra.Command
 
 var inputFilePath, dictionaryFilePath *string
 var batchSize *uint32
+var epochs *uint64
 
 func init() {
 
@@ -31,6 +35,7 @@ func init() {
 			log.Printf("\tDictionary: %s\n", *dictionaryFilePath)
 			log.Printf("\tInput: %s\n", *inputFilePath)
 			log.Printf("\tBatch size: %d\n", *batchSize)
+			log.Printf("\tEpochs: %d\n", *epochs)
 
 			if d, e := dic.LoadDictionary(*dictionaryFilePath); e != nil {
 				log.Fatal(e)
@@ -38,16 +43,31 @@ func init() {
 				log.Printf("Loaded dictionary of %d words", d.Len())
 
 				rand.Seed(time.Now().UnixNano())
-				m := Word2VecModel{Cbow: true, Hs: true, Window: 5}
-				m.Train(*inputFilePath, d, 1, 4, 0.025, 1e-5)
+				m := Word2VecModel{Size: 128, Cbow: true, Hs: true, Window: 5, Dictionary: d}
+				m.Train(*inputFilePath, d, *epochs, 4, 0.025, 1e-5)
+				if output, e := os.Create("model.json"); e != nil {
+					log.Fatal(e)
+				} else {
+					if e = json.NewEncoder(output).Encode(m); e != nil {
+						log.Fatal(e)
+					}
+				}
+				m.precompute()
 
-				/*
-								for i, v := range d.Index {
-									log.Printf("%d %s %+v\n", i, v.Word, Codes[i])
-									if i > 10 {
-										break
-									}
-								}*/
+				///
+				fi := bufio.NewReader(os.Stdin)
+				for {
+					fmt.Printf("query: ")
+					if query, ok := readline(fi); ok {
+						if len(query) > 0 {
+							m.search(query)
+						}
+					} else {
+						break
+					}
+				}
+
+				///
 			}
 
 		},
@@ -56,6 +76,7 @@ func init() {
 	inputFilePath = EmbedCommand.Flags().StringP("input", "i", "", "text file path")
 	dictionaryFilePath = EmbedCommand.Flags().StringP("dic", "d", "", "dictionary file path")
 	batchSize = EmbedCommand.Flags().Uint32P("batch", "b", 128, "batch size")
+	epochs = EmbedCommand.Flags().Uint64P("epochs", "e", 5, "number of epochs")
 	EmbedCommand.MarkFlagRequired("input")
 	EmbedCommand.MarkFlagRequired("dic")
 }
@@ -76,6 +97,28 @@ type Word2VecModel struct {
 	Words, Size, Negative, Window uint32
 	Hs, Cbow, Skipgram            bool
 	Syn0, Syn1                    []float32
+	Dictionary                    *dic.Dictionary
+}
+
+func (m *Word2VecModel) precompute() {
+	for _, w := range m.Dictionary.Index {
+		v := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
+		asm.Sscale(1/asm.Snrm2(v), v)
+	}
+}
+
+func (m *Word2VecModel) search(query string) {
+	//s := int(m.Size)
+	if w, ok := m.Dictionary.Words[query]; ok {
+		qv := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
+		for _, w := range m.Dictionary.Index {
+			v := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
+			dot := asm.Sdot(v, qv)
+			if dot > 0.6 {
+				log.Printf("%f %s", dot, w.Word)
+			}
+		}
+	}
 }
 
 // precompute and cache unigram frequencies
@@ -110,6 +153,13 @@ func MakeRandomVector(size uint32) (v []float32) {
 		v[j] = (rand.Float32() - 0.5) / float32(size)
 	}
 	return
+}
+func readline(fi *bufio.Reader) (string, bool) {
+	s, err := fi.ReadString('\n')
+	if err != nil {
+		return "", false
+	}
+	return s[:len(s)-1], true
 }
 
 /*MaxInt max int*/
@@ -157,10 +207,9 @@ func ReadCorpus(path string, d *dic.Dictionary, pipe chan []uint32) (e error) {
 				document[i] = d.Words[token].ID
 			}
 			pipe <- document
-
-			//atomic.AddUint64(&documents, 1)
 		}
 	}
+	pipe <- nil
 	return
 }
 
@@ -199,11 +248,9 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 		panic("Inconsistent parameters")
 	}
 
-	m.Size = m.Size
-
 	L := uint32(d.Len())
-	log.Printf("Input-hidden: %dx%d\n", L, m.Size)
-	log.Printf("Hidden-output: %dx%d\n", m.Size, L)
+	log.Printf("Input-hidden: %d x %d\n", L, m.Size)
+	log.Printf("Hidden-output: %d x %d\n", m.Size, L)
 	m.Words = L
 	// allocate memory
 	m.Syn0 = MakeRandomVector(m.Words * m.Size)
@@ -219,13 +266,15 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 	}
 
 	/*
-	if m.Negative > 0 {
-		unigramTable = precomputeUnigramTable(d)
-	}*/
+		if m.Negative > 0 {
+			unigramTable = precomputeUnigramTable(d)
+		}*/
 
 	var frequencyTable []float64
 
 	var wordsReady float64
+	var errorsReady float64
+	var errorsCount float64
 	var documents, totalWords uint64
 	if documents, totalWords, e = fileStats(path); e != nil {
 		return e
@@ -239,7 +288,10 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 		pipe := make(chan []uint32, 1024)
 		go ReadCorpus(path, d, pipe)
 
-		workChannel := make(chan uint64, threads)
+		workChannel := make(chan struct {
+			c float64
+			e float64
+		}, threads)
 		var currentAlpha float32
 		// setup reporting
 		ticker := time.NewTicker(time.Second)
@@ -251,21 +303,32 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 
 					progress = 100.0 * float64(sentenceCount) / float64(documents*iterations)
 
-					log.Printf("%cIt: %d Proc: %d Alpha: %f Progress: %.2f%% Words/thread/sec: %fk All word/sec: %fk", 13, iteration, runtime.NumGoroutine(),
-						currentAlpha, progress, (wordsReady-prev)/float64(threads)/1000.0,
+					log.Printf("%cIt: %d Proc: %d Alpha: %f Progress: %.2f%% Loss: %f Words/thread/sec: %fk All word/sec: %fk", 13, iteration, runtime.NumGoroutine(),
+						currentAlpha, progress, errorsReady/errorsCount, (wordsReady-prev)/float64(threads)/1000.0,
 						(wordsReady-prev)/1000.0)
 					prev = wordsReady
+					errorsReady = 0
+					errorsCount = 0
 				}
 			}
 		}()
 
 		// read text corpus ventilating Work throught workChannel
-		for _ = range make([]struct{}, threads) {
-			workChannel <- 0
+		for range make([]struct{}, threads) {
+			workChannel <- struct {
+				c float64
+				e float64
+			}{0, 100}
 		}
 
 		for document := range pipe {
-			wordsReady += float64(<-workChannel)
+			if document == nil {
+				break
+			}
+			wc := <-workChannel
+			wordsReady += wc.c
+			errorsReady += wc.e
+			errorsCount++
 
 			currentAlpha = float32(MaxFloat32(minalpha, alpha*(1.0-float32(sentenceCount)/float32(documents*iterations))))
 
@@ -291,8 +354,11 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 		}
 		ticker.Stop()
 
-		for _ = range make([]struct{}, threads) {
-			wordsReady += float64(<-workChannel)
+		for range make([]struct{}, threads) {
+			wc := <-workChannel
+			wordsReady += wc.c
+			errorsReady += wc.e
+			errorsCount++
 		}
 
 	}
@@ -301,7 +367,10 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 	return
 }
 
-func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel chan uint64, Codes [][]byte, Points [][]uint32) {
+func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel chan struct {
+	c float64
+	e float64
+}, Codes [][]byte, Points [][]uint32) {
 	sentenceLength := len(sentence)
 
 	window := int(m.Window)
@@ -312,6 +381,8 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 	var g, f float32
 	var l2 []float32
 	var word, current uint32
+	var loss float64
+	var lossCount float64
 	for i, current = range sentence {
 		reducedWindow = rand.Int() % window
 		a = MaxInt(0, i-window+reducedWindow)
@@ -326,12 +397,12 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 			word = sentence[j]
 			//if int(s*word+s) > len(m.Syn0) {
 			//	panic("Problem!!!!!")
-				//fmt.Println("Problem!!!!!")
-				//fmt.Println("Word", word)
-				//fmt.Println("Sentence", sentence)
-				//fmt.Println("Len", len(m.Syn0))
-				//fmt.Println("Index", s*word)
-				//fmt.Println("Index+s", s*word+s)
+			//fmt.Println("Problem!!!!!")
+			//fmt.Println("Word", word)
+			//fmt.Println("Sentence", sentence)
+			//fmt.Println("Len", len(m.Syn0))
+			//fmt.Println("Index", s*word)
+			//fmt.Println("Index+s", s*word+s)
 			//	workChannel <- uint64(sentenceLength)
 			//	return
 			//}
@@ -345,16 +416,19 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 			l2 = m.Syn1[s*Points[current][d]:][:s]
 
 			f = asm.Sdot(hidden, l2)
-
 			if f > 6.0 {
-				g = (float32(1.0-code) - 1) * alpha
+				f = 1
+				g = (float32(1.0-code) - 1)
 			} else if f < -6.0 {
-				g = (float32(1.0-code) - 0) * alpha
+				f = 0
+				g = (float32(1.0-code) - 0)
 			} else {
 				f = float32(math.Exp(float64(f)))
-				g = (float32(1.0-code) - f/(f+1.0)) * alpha
+				g = (float32(1.0-code) - f/(f+1.0))
 			}
-
+			loss += float64(g)
+			lossCount++
+			g *= alpha
 			// 'g' is the gradient multiplied by the learning rate
 			// Propagate errors output -> hidden
 			asm.Saxpy(g, l2, hiddenError)
@@ -373,5 +447,8 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 		asm.Sclean(hiddenError)
 	}
 
-	workChannel <- uint64(sentenceLength)
+	workChannel <- struct {
+		c float64
+		e float64
+	}{float64(sentenceLength), 1 + loss/lossCount}
 }

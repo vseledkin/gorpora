@@ -1,14 +1,15 @@
 package dic
 
 import (
-	"github.com/spf13/cobra"
-	"log"
 	"bufio"
-	"os"
-	"strings"
 	"fmt"
+	"log"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 var DictionaryCommand *cobra.Command
@@ -86,8 +87,8 @@ func Dic() error {
 
 type Word struct {
 	ID    uint32
-	Word  string
 	Count uint32
+	Word  string
 }
 
 type Dictionary struct {
@@ -120,7 +121,7 @@ func LoadDictionary(path string) (d *Dictionary, e error) {
 			word := parsedLine[0]
 			var count int
 			count, e = strconv.Atoi(parsedLine[1])
-			w := Word{uint32(id), word, uint32(count)}
+			w := Word{uint32(id), uint32(count), word}
 			d.Words[w.Word] = &w
 		}
 	}
