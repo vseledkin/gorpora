@@ -10,6 +10,7 @@ import (
 	"github.com/vseledkin/gorpora/dic"
 	"github.com/vseledkin/gorpora/embed"
 	"github.com/vseledkin/gorpora/interleave"
+	"github.com/vseledkin/gorpora/tokenizer"
 )
 
 func main() {
@@ -19,6 +20,7 @@ func main() {
 	rootCmd.AddCommand(dic.DictionaryCommand)
 	rootCmd.AddCommand(embed.EmbedCommand)
 	rootCmd.AddCommand(interleave.Command)
+	rootCmd.AddCommand(tokenizer.WordTokenizerCommand)
 	if e := rootCmd.Execute(); e != nil {
 		log.Fatal(e)
 	}

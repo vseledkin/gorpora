@@ -15,12 +15,13 @@ import (
 	"github.com/vseledkin/gorpora/asm"
 	"github.com/vseledkin/gorpora/dic"
 	"encoding/json"
+	"github.com/pkg/errors"
 )
 
 var EmbedCommand *cobra.Command
 
-var inputFilePath, dictionaryFilePath *string
-var batchSize *uint32
+var inputFilePath, dictionaryFilePath, method *string
+var batchSize, window *uint32
 var epochs *uint64
 
 func init() {
@@ -32,10 +33,12 @@ func init() {
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Print()
 			log.Println("Embed:")
+			log.Printf("\tMethod: %s\n", *method)
 			log.Printf("\tDictionary: %s\n", *dictionaryFilePath)
 			log.Printf("\tInput: %s\n", *inputFilePath)
 			log.Printf("\tBatch size: %d\n", *batchSize)
 			log.Printf("\tEpochs: %d\n", *epochs)
+			log.Printf("\tWindow: %d\n", *window)
 
 			if d, e := dic.LoadDictionary(*dictionaryFilePath); e != nil {
 				log.Fatal(e)
@@ -43,7 +46,15 @@ func init() {
 				log.Printf("Loaded dictionary of %d words", d.Len())
 
 				rand.Seed(time.Now().UnixNano())
-				m := Word2VecModel{Size: 128, Cbow: true, Hs: true, Window: 5, Dictionary: d}
+				var m Word2VecModel
+				switch *method {
+				case "skipgram+hs":
+					m = Word2VecModel{Size: 128, Skipgram: true, Hs: true, Window: *window, Dictionary: d}
+				case "cbow+hs":
+					m = Word2VecModel{Size: 128, Cbow: true, Hs: true, Window: *window, Dictionary: d}
+				default:
+					log.Fatal(errors.New("unsupported method " + *method))
+				}
 				m.Train(*inputFilePath, d, *epochs, 4, 0.025, 1e-5)
 				if output, e := os.Create("model.json"); e != nil {
 					log.Fatal(e)
@@ -77,8 +88,11 @@ func init() {
 	dictionaryFilePath = EmbedCommand.Flags().StringP("dic", "d", "", "dictionary file path")
 	batchSize = EmbedCommand.Flags().Uint32P("batch", "b", 128, "batch size")
 	epochs = EmbedCommand.Flags().Uint64P("epochs", "e", 5, "number of epochs")
+	window = EmbedCommand.Flags().Uint32P("window", "w", 5, "context window")
+	method = EmbedCommand.Flags().StringP("method", "m", "skipgram+hs", "model type")
 	EmbedCommand.MarkFlagRequired("input")
 	EmbedCommand.MarkFlagRequired("dic")
+	EmbedCommand.MarkFlagRequired("method")
 }
 
 const (
@@ -114,7 +128,7 @@ func (m *Word2VecModel) search(query string) {
 		for _, w := range m.Dictionary.Index {
 			v := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
 			dot := asm.Sdot(v, qv)
-			if dot > 0.6 {
+			if dot > 0.7 {
 				log.Printf("%f %s", dot, w.Word)
 			}
 		}
@@ -243,6 +257,8 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 
 	case m.Cbow && m.Hs:
 		log.Println("CBOW + HS")
+	case m.Skipgram && m.Hs:
+		log.Println("SKIPGRAM + HS")
 	default:
 		log.Println("Inconsistent parameters")
 		panic("Inconsistent parameters")
@@ -344,9 +360,9 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 			}
 			switch {
 			case m.Cbow && m.Hs:
-				go m.update(document, currentAlpha, workChannel, Codes, Points)
-				//case m.Skipgram && m.Hs:
-				//	go m.learnSentenceSkipGramHs(uint32(len(document.Text)), document.Text, currentAlpha, workChannel, Codes, Points)
+				go m.updateCbowHs(document, currentAlpha, workChannel, Codes, Points)
+			case m.Skipgram && m.Hs:
+				go m.updateSkipGramHs(document, currentAlpha, workChannel, Codes, Points)
 			default:
 				panic("Inconsistent parameters")
 			}
@@ -367,7 +383,7 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 	return
 }
 
-func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel chan struct {
+func (m *Word2VecModel) updateCbowHs(sentence []uint32, alpha float32, workChannel chan struct {
 	c float64
 	e float64
 }, Codes [][]byte, Points [][]uint32) {
@@ -395,22 +411,9 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 				continue
 			}
 			word = sentence[j]
-			//if int(s*word+s) > len(m.Syn0) {
-			//	panic("Problem!!!!!")
-			//fmt.Println("Problem!!!!!")
-			//fmt.Println("Word", word)
-			//fmt.Println("Sentence", sentence)
-			//fmt.Println("Len", len(m.Syn0))
-			//fmt.Println("Index", s*word)
-			//fmt.Println("Index+s", s*word+s)
-			//	workChannel <- uint64(sentenceLength)
-			//	return
-			//}
 			asm.Sxpy(m.Syn0[s*word:][:s], hidden)
 		}
 		// HIERARCHICAL SOFTMAX
-
-		//fmt.Println(current, m.Codes[current])
 		for d, code = range Codes[current] {
 			// Propagate hidden -> output
 			l2 = m.Syn1[s*Points[current][d]:][:s]
@@ -450,5 +453,66 @@ func (m *Word2VecModel) update(sentence []uint32, alpha float32, workChannel cha
 	workChannel <- struct {
 		c float64
 		e float64
-	}{float64(sentenceLength), 1 + loss/lossCount}
+	}{float64(sentenceLength), loss / lossCount}
+}
+
+func (m *Word2VecModel) updateSkipGramHs(sentence []uint32, alpha float32, workChannel chan struct {
+	c float64
+	e float64
+}, Codes [][]byte, Points [][]uint32) {
+	sentenceLength := len(sentence)
+	window := int(m.Window)
+	neu1e := make([]float32, m.Size)
+	var loss float64
+	var lossCount float64
+	var reducedWindow, j, k, i, d, a, b int
+	var code uint8
+	s := m.Size
+	var g, f float32
+	var l1, l2 []float32
+	var word, current uint32
+	for i, current = range sentence {
+		reducedWindow = rand.Int() % window
+		a = MaxInt(0, i-window+reducedWindow)
+		b = MinInt(sentenceLength, i+window+1-reducedWindow)
+		// train skip gram model
+		for j, k = a, b; j < k; j++ {
+			if j == i {
+				continue
+			}
+			word = sentence[j]
+
+			// HIERARCHICAL SOFTMAX
+			l1 = m.Syn0[s*word:][:s]
+
+			for d, code = range Codes[current] {
+				// Propagate hidden -> output
+				l2 = m.Syn1[s*Points[current][d]:][:s]
+				f = asm.Sdot(l1, l2)
+				if f > 6.0 {
+					g = float32(1.0-code) - 1
+				} else if f < -6.0 {
+					g = float32(1.0-code) - 0
+				} else {
+					f = float32(math.Exp(float64(f)))
+					g = float32(1.0-code) - f/(f+1.0)
+				}
+				loss += float64(g)
+				lossCount++
+				g *= alpha
+				// Propagate errors output -> hidden
+				asm.Saxpy(g, l2, neu1e)
+				// Learn weights hidden -> output
+				asm.Saxpy(g, l1, l2)
+			}
+			// Learn weights input -> hidden
+			asm.Sxpy(neu1e, l1)
+			asm.Sclean(neu1e)
+		}
+
+	}
+	workChannel <- struct {
+		c float64
+		e float64
+	}{float64(sentenceLength), loss / lossCount}
 }
