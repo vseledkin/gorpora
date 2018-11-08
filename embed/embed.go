@@ -16,13 +16,14 @@ import (
 	"github.com/vseledkin/gorpora/dic"
 	"encoding/json"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 var EmbedCommand *cobra.Command
 
 var inputFilePath, dictionaryFilePath, method *string
 var batchSize, window *uint32
-var epochs *uint64
+var epochs, threads *uint64
 
 func init() {
 
@@ -39,6 +40,7 @@ func init() {
 			log.Printf("\tBatch size: %d\n", *batchSize)
 			log.Printf("\tEpochs: %d\n", *epochs)
 			log.Printf("\tWindow: %d\n", *window)
+			log.Printf("\tThreads: %d\n", *threads)
 
 			if d, e := dic.LoadDictionary(*dictionaryFilePath); e != nil {
 				log.Fatal(e)
@@ -55,7 +57,7 @@ func init() {
 				default:
 					log.Fatal(errors.New("unsupported method " + *method))
 				}
-				m.Train(*inputFilePath, d, *epochs, 4, 0.025, 1e-5)
+				m.Train(*inputFilePath, d, *epochs, *threads, 0.025, 1e-5)
 				if output, e := os.Create("model.json"); e != nil {
 					log.Fatal(e)
 				} else {
@@ -88,6 +90,7 @@ func init() {
 	dictionaryFilePath = EmbedCommand.Flags().StringP("dic", "d", "", "dictionary file path")
 	batchSize = EmbedCommand.Flags().Uint32P("batch", "b", 128, "batch size")
 	epochs = EmbedCommand.Flags().Uint64P("epochs", "e", 5, "number of epochs")
+	threads = EmbedCommand.Flags().Uint64P("threads", "t", 2, "number of threads")
 	window = EmbedCommand.Flags().Uint32P("window", "w", 5, "context window")
 	method = EmbedCommand.Flags().StringP("method", "m", "skipgram+hs", "model type")
 	EmbedCommand.MarkFlagRequired("input")
@@ -121,17 +124,29 @@ func (m *Word2VecModel) precompute() {
 	}
 }
 
+type weightable struct {
+	item   string
+	weight float32
+}
+
 func (m *Word2VecModel) search(query string) {
 	//s := int(m.Size)
+	var result []*weightable
 	if w, ok := m.Dictionary.Words[query]; ok {
 		qv := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
 		for _, w := range m.Dictionary.Index {
 			v := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
 			dot := asm.Sdot(v, qv)
-			if dot > 0.7 {
-				log.Printf("%f %s", dot, w.Word)
+			if dot > 0.6 {
+				result = append(result, &weightable{w.Word, dot})
 			}
 		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].weight > result[j].weight
+	})
+	for _, r := range result {
+		log.Printf("%f %s", r.weight, r.item)
 	}
 }
 
