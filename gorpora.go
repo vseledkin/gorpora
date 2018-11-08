@@ -19,6 +19,7 @@ func main() {
 	rootCmd.AddCommand(cld2.LanguageCommand)
 	rootCmd.AddCommand(dic.DictionaryCommand)
 	rootCmd.AddCommand(embed.EmbedCommand)
+	rootCmd.AddCommand(embed.NNCommand)
 	rootCmd.AddCommand(interleave.Command)
 	rootCmd.AddCommand(tokenizer.WordTokenizerCommand)
 	if e := rootCmd.Execute(); e != nil {

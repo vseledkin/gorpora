@@ -2,7 +2,6 @@ package embed
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	"math"
 	"math/rand"
@@ -16,13 +15,16 @@ import (
 	"github.com/vseledkin/gorpora/dic"
 	"encoding/json"
 	"github.com/pkg/errors"
+	"fmt"
 )
 
 var EmbedCommand *cobra.Command
+var NNCommand *cobra.Command
 
-var inputFilePath, dictionaryFilePath, method *string
+var inputFilePath, dictionaryFilePath, method, model *string
 var batchSize, window *uint32
 var epochs *uint64
+var threshold *float32
 
 func init() {
 
@@ -63,26 +65,51 @@ func init() {
 						log.Fatal(e)
 					}
 				}
-				m.precompute()
 
-				///
-				fi := bufio.NewReader(os.Stdin)
-				for {
-					fmt.Printf("query: ")
-					if query, ok := readline(fi); ok {
-						if len(query) > 0 {
-							m.search(query)
-						}
-					} else {
-						break
-					}
-				}
-
-				///
 			}
 
 		},
 	}
+
+	NNCommand = &cobra.Command{
+		Use:   "nn",
+		Short: "explore nearest words",
+		Long:  "explore nearest words",
+		Run: func(cmd *cobra.Command, args []string) {
+			cmd.Print()
+			log.Println("NN:")
+			log.Printf("\tModel : %s\n", *model)
+			log.Printf("\tThreshold : %f\n", *threshold)
+			if f, e := os.Open(*model); e != nil {
+				log.Fatal(e)
+			} else {
+				defer f.Close()
+				var m Word2VecModel
+				if e = json.NewDecoder(f).Decode(&m); e != nil {
+					log.Fatal(e)
+				} else {
+					m.precompute()
+
+					fi := bufio.NewReader(os.Stdin)
+					for {
+						fmt.Printf("query: ")
+						if query, ok := readline(fi); ok {
+							if len(query) > 0 {
+								m.search(query)
+							}
+						} else {
+							break
+						}
+					}
+
+				}
+			}
+		},
+	}
+
+	model = NNCommand.Flags().StringP("model", "m", "", "model file path")
+	threshold = NNCommand.Flags().Float32P("threshold", "t", 0.6, "min cosine distance")
+	NNCommand.MarkFlagRequired("model")
 
 	inputFilePath = EmbedCommand.Flags().StringP("input", "i", "", "text file path")
 	dictionaryFilePath = EmbedCommand.Flags().StringP("dic", "d", "", "dictionary file path")
