@@ -29,7 +29,6 @@ var threshold *float32
 
 var epochs, threads *uint64
 
-
 func init() {
 
 	EmbedCommand = &cobra.Command{
@@ -168,13 +167,18 @@ func (m *Word2VecModel) search(query string) {
 			v := m.Syn0[w.ID*m.Size : (w.ID+1)*m.Size]
 			dot := asm.Sdot(v, qv)
 			if dot > *threshold {
-				result = append(result, &weightable{w.Word, dot})
+				if w.Count > 1 {
+					result = append(result, &weightable{w.Word, dot})
+				}
 			}
 		}
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].weight > result[j].weight
 	})
+	if len(result) > 15 {
+		result = result[:15]
+	}
 	for _, r := range result {
 		log.Printf("%f %s", r.weight, r.item)
 	}
