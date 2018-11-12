@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vseledkin/gorpora/asm"
 	"github.com/vseledkin/gorpora/dic"
+	c "github.com/vseledkin/gorpora/common"
 	"encoding/json"
 	"github.com/pkg/errors"
 	"fmt"
@@ -21,8 +22,8 @@ import (
 
 var EmbedCommand *cobra.Command
 var NNCommand *cobra.Command
-
-var inputFilePath, dictionaryFilePath, method, model *string
+var inputFilePath *[]string
+var dictionaryFilePath, method, model *string
 var batchSize, window *uint32
 
 var threshold *float32
@@ -40,7 +41,9 @@ func init() {
 			log.Println("Embed:")
 			log.Printf("\tMethod: %s\n", *method)
 			log.Printf("\tDictionary: %s\n", *dictionaryFilePath)
-			log.Printf("\tInput: %s\n", *inputFilePath)
+			for _, path := range *inputFilePath {
+				log.Printf("\tInput: %s\n", path)
+			}
 			log.Printf("\tBatch size: %d\n", *batchSize)
 			log.Printf("\tEpochs: %d\n", *epochs)
 			log.Printf("\tWindow: %d\n", *window)
@@ -115,7 +118,7 @@ func init() {
 	threshold = NNCommand.Flags().Float32P("threshold", "t", 0.6, "min cosine distance")
 	NNCommand.MarkFlagRequired("model")
 
-	inputFilePath = EmbedCommand.Flags().StringP("input", "i", "", "text file path")
+	inputFilePath = EmbedCommand.Flags().StringArrayP("input", "i", []string{}, "text file paths, supports reading from multiple files")
 	dictionaryFilePath = EmbedCommand.Flags().StringP("dic", "d", "", "dictionary file path")
 	batchSize = EmbedCommand.Flags().Uint32P("batch", "b", 128, "batch size")
 	epochs = EmbedCommand.Flags().Uint64P("epochs", "e", 5, "number of epochs")
@@ -176,8 +179,8 @@ func (m *Word2VecModel) search(query string) {
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].weight > result[j].weight
 	})
-	if len(result) > 15 {
-		result = result[:15]
+	if len(result) > 35 {
+		result = result[:35]
 	}
 	for _, r := range result {
 		log.Printf("%f %s", r.weight, r.item)
@@ -223,30 +226,6 @@ func readline(fi *bufio.Reader) (string, bool) {
 		return "", false
 	}
 	return s[:len(s)-1], true
-}
-
-/*MaxInt max int*/
-func MaxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-/*MinInt min int*/
-func MinInt(a, b int) int {
-	if a > b {
-		return b
-	}
-	return a
-}
-
-/*MaxFloat32 max float32*/
-func MaxFloat32(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func ReadCorpus(path string, d *dic.Dictionary, pipe chan []uint32) (e error) {
@@ -299,9 +278,9 @@ func fileStats(path string) (documents, totalWords uint64, e error) {
 }
 
 /*
-Train train word 2 vec model
+Train  word 2 vec model
 */
-func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, threads uint64, alpha, subsample float32) (e error) {
+func (m *Word2VecModel) Train(paths []string, d *dic.Dictionary, iterations, threads uint64, alpha, subsample float32) (e error) {
 	switch {
 
 	case m.Cbow && m.Hs:
@@ -341,8 +320,14 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 	var errorsReady float64
 	var errorsCount float64
 	var documents, totalWords uint64
-	if documents, totalWords, e = fileStats(path); e != nil {
-		return e
+	for _, path := range paths {
+		log.Printf("Counting words in %s", path)
+		var d, t uint64
+		if d, t, e = fileStats(path); e != nil {
+			return e
+		}
+		documents += d
+		totalWords += t
 	}
 	log.Printf("Input has %d documents %d words", documents, totalWords)
 
@@ -351,7 +336,9 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 	for iteration := range make([]struct{}, iterations) {
 		//ialpha = alpha / (1.0 + float32(iteration)/float32(iterations))
 		pipe := make(chan []uint32, 1024)
-		go ReadCorpus(path, d, pipe)
+		for _, path := range paths {
+			go ReadCorpus(path, d, pipe)
+		}
 
 		workChannel := make(chan struct {
 			c float64
@@ -385,17 +372,20 @@ func (m *Word2VecModel) Train(path string, d *dic.Dictionary, iterations, thread
 				e float64
 			}{0, 100}
 		}
-
+		var nilCount int
 		for document := range pipe {
 			if document == nil {
-				break
+				nilCount++
+				if nilCount==len(paths){
+					break
+				}
 			}
 			wc := <-workChannel
 			wordsReady += wc.c
 			errorsReady += wc.e
 			errorsCount++
 
-			currentAlpha = float32(MaxFloat32(minalpha, alpha*(1.0-float32(sentenceCount)/float32(documents*iterations))))
+			currentAlpha = float32(c.MaxFloat32(minalpha, alpha*(1.0-float32(sentenceCount)/float32(documents*iterations))))
 
 			if subsample > 0 {
 				if len(frequencyTable) == 0 {
@@ -450,8 +440,8 @@ func (m *Word2VecModel) updateCbowHs(sentence []uint32, alpha float32, workChann
 	var lossCount float64
 	for i, current = range sentence {
 		reducedWindow = rand.Int() % window
-		a = MaxInt(0, i-window+reducedWindow)
-		b = MinInt(sentenceLength, i+window+1-reducedWindow)
+		a = c.MaxInt(0, i-window+reducedWindow)
+		b = c.MinInt(sentenceLength, i+window+1-reducedWindow)
 		/*
 		   train bag of words model, context predicts word in -> hidden
 		*/
@@ -522,8 +512,8 @@ func (m *Word2VecModel) updateSkipGramHs(sentence []uint32, alpha float32, workC
 	var word, current uint32
 	for i, current = range sentence {
 		reducedWindow = rand.Int() % window
-		a = MaxInt(0, i-window+reducedWindow)
-		b = MinInt(sentenceLength, i+window+1-reducedWindow)
+		a = c.MaxInt(0, i-window+reducedWindow)
+		b = c.MinInt(sentenceLength, i+window+1-reducedWindow)
 		// train skip gram model
 		for j, k = a, b; j < k; j++ {
 			if j == i {
@@ -538,6 +528,8 @@ func (m *Word2VecModel) updateSkipGramHs(sentence []uint32, alpha float32, workC
 				// Propagate hidden -> output
 				l2 = m.Syn1[s*Points[current][d]:][:s]
 				f = asm.Sdot(l1, l2)
+				loss += float64(f)
+
 				if f > 6.0 {
 					g = float32(1.0-code) - 1
 				} else if f < -6.0 {
@@ -546,7 +538,6 @@ func (m *Word2VecModel) updateSkipGramHs(sentence []uint32, alpha float32, workC
 					f = float32(math.Exp(float64(f)))
 					g = float32(1.0-code) - f/(f+1.0)
 				}
-				loss += float64(g)
 				lossCount++
 				g *= alpha
 				// Propagate errors output -> hidden
