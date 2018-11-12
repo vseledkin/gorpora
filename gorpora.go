@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vseledkin/gorpora/dic"
 	"github.com/vseledkin/gorpora/embed"
+	"github.com/vseledkin/gorpora/small_embed"
 	"github.com/vseledkin/gorpora/interleave"
 	"github.com/vseledkin/gorpora/tokenizer"
 )
@@ -19,7 +20,9 @@ func main() {
 	rootCmd.AddCommand(cld2.LanguageCommand)
 	rootCmd.AddCommand(dic.DictionaryCommand)
 	rootCmd.AddCommand(embed.EmbedCommand)
+	rootCmd.AddCommand(small_embed.EmbedCommand)
 	rootCmd.AddCommand(embed.NNCommand)
+	rootCmd.AddCommand(small_embed.NNCommand)
 	rootCmd.AddCommand(interleave.Command)
 	rootCmd.AddCommand(tokenizer.WordTokenizerCommand)
 	if e := rootCmd.Execute(); e != nil {
