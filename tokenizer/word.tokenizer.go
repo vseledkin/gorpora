@@ -43,11 +43,11 @@ func SimpleTokenizer() (e error) {
 	var line string
 	for {
 		line, e = reader.ReadString('\n')
-		if e != nil && e==io.EOF {
+		if e != nil && e == io.EOF {
 			e = nil
 			break
 		}
-		tokens := split2Tokens(line)
+		tokens := Split2String(line)
 		if len(tokens) == 0 {
 			continue
 		}
@@ -57,12 +57,16 @@ func SimpleTokenizer() (e error) {
 	return
 }
 
-func split2Tokens(s string) string {
+func Split2String(s string) string {
+	return strings.Join(Split2Tokens(s), " ")
+}
+
+func Split2Tokens(s string) []string {
 	token := ""
 	var split []string
 	for _, r := range s {
 		switch {
-		case unicode.IsPunct(r) || unicode.IsSymbol(r):
+		case unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsDigit(r):
 			if len(token) > 0 {
 				split = append(split, token)
 				token = ""
@@ -84,5 +88,5 @@ func split2Tokens(s string) string {
 	if len(token) > 0 {
 		split = append(split, token)
 	}
-	return strings.Join(split, " ")
+	return split
 }

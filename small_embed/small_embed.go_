@@ -19,6 +19,7 @@ import (
 	"fmt"
 	//	"sort"
 	"sort"
+	"github.com/vseledkin/gorpora/nn"
 )
 
 var EmbedCommand *cobra.Command
@@ -193,7 +194,7 @@ func (m *Word2VecModel) precompute(paths []string) {
 	doccount := 0
 	for document := range pipe {
 		doccount++
-		if doccount % 1000 == 999 {
+		if doccount%1000 == 999 {
 			log.Printf("read %d documents", doccount)
 		}
 		if document == nil {
@@ -331,7 +332,9 @@ func ReadCorpus(path string, big_dic, small_dic *dic.Dictionary, pipe chan [][]u
 				document[i] = document[i][:1+j]
 				i++
 			}
-			pipe <- document[:i]
+			if len(document[:i]) > 1 {
+				pipe <- document[:i]
+			}
 		}
 	}
 	pipe <- nil
@@ -392,7 +395,7 @@ func (m *Word2VecModel) Train(paths []string, iterations uint64, threads uint64,
 	//var unigramTable []uint32
 	var Codes [][]byte
 	var Points [][]uint32
-	ma := NewMovingAverage(1024)
+
 	rand.Seed(time.Now().UnixNano())
 	if m.Hs {
 		Codes, Points, _ = dic.BuildHuffmanTreeFromDictionary(m.BigDictionary)
@@ -440,9 +443,9 @@ func (m *Word2VecModel) Train(paths []string, iterations uint64, threads uint64,
 				if prev != wordsReady {
 
 					progress = 100.0 * float64(sentenceCount) / float64(documents*iterations)
-					ma.Add(float32(errorsReady/errorsCount))
+
 					log.Printf("%cIt: %d Proc: %d Alpha: %f Progress: %.2f%% Loss: %f Words/thread/sec: %fk All word/sec: %fk", 13, iteration, runtime.NumGoroutine(),
-						currentAlpha, progress, ma.Avg(), (wordsReady-prev)/float64(threads)/1000.0,
+						currentAlpha, progress, errorsReady/errorsCount, (wordsReady-prev)/float64(threads)/1000.0,
 						(wordsReady-prev)/1000.0)
 					prev = wordsReady
 					errorsReady = 0
@@ -510,16 +513,15 @@ func (m *Word2VecModel) updateCbowHs(sentence [][]uint32, alpha float32, workCha
 
 	s := m.Size
 	window := int(m.Window)
-	hidden, hiddenError := make([]float32, s), make([]float32, s)
-//	posError, wordError := make([]float32, m.PosSize*s), make([]float32, m.PosSize*s)
+	//hidden, hiddenError := make([]float32, s), make([]float32, s)
+	//hidden0, posError, wordError := make([]float32, m.PosSize*s), make([]float32, m.PosSize*s), make([]float32, m.PosSize*s)
 	var reducedWindow, j, k, d, a, b int
 	var code uint8
-	var g, f float32
-	var l2 []float32
-	var p, subword uint32
+	//var grad, f float32
+	//var l2 []float32
+	var p uint32
 	var loss float64
 	var lossCount float64
-	//var sw []float32
 	for i, current := range sentence {
 		reducedWindow = wc.r.Intn(window)
 		a = c.MaxInt(0, i-window+reducedWindow)
@@ -527,88 +529,62 @@ func (m *Word2VecModel) updateCbowHs(sentence [][]uint32, alpha float32, workCha
 		/*
 		   train bag of words model, context predicts word in -> hidden
 		*/
+		g := nn.Graph{NeedsBackprop: true}
+		var words []*nn.Matrix
+		var hidden *nn.Matrix
+		var weights []*nn.Matrix
 		for j, k = a, b; j < k; j++ {
 			if j == i {
 				continue
 			}
 
-			//p = 0
-			//l := len(sentence[j][1:])
+			p = 0
+			l := len(sentence[j][1:])
 			for _, subword := range sentence[j][1:] {
-				//sw = m.Syn0[s*subword:s*subword+s]
-				//if l > 1 {
-				//	asm.Sxmuleyplusz(sw, m.Pos[s*p:s*p+s], hidden)
-				//} else {
-				//	asm.Sxpy(sw, hidden[s*p:s*p+s])
-				//}
+				// forward
+				w := nn.InputVector(m.Syn0[s*subword : s*subword+s])
+				weights = append(weights, w)
+				if l > 1 { // use positional encoding only if have subwords
+					pos := nn.InputVector(m.Pos[s*p : s*p+s])
+					weights = append(weights, pos)
+					words = append(words, g.EMul(w, pos))
+					//asm.Sxmuleyplusz(m.Syn0[s*subword:s*subword+s], m.Pos[s*p:s*p+s], hidden0[s*p:s*p+s])
+					//asm.Sxpy(hidden0[s*p:s*p+s], hidden)
 
-
-				asm.Sxpy(m.Syn0[s*subword:s*subword+s], hidden[s*p:s*p+s])
-
-
-			//	p++
+				} else {
+					words = append(words, w)
+					//asm.Sxmulelyplusz(m.Syn0[s*subword:s*subword+s], m.Pos[s*p:s*p+s], hidden0[s*p:s*p+s])
+					//asm.Sxpy(m.Syn0[s*subword:s*subword+s], hidden)
+				}
+				p++
 			}
+			// place word embedding proposal into hidden layer
+			hidden = g.Add(words...)
 			//asm.Sscale(1/float32(len(sentence[j])-1), hidden)
 		}
+
 		// HIERARCHICAL SOFTMAX
 		points := Points[current[0]]
+
 		for d, code = range Codes[current[0]] {
 			// Propagate hidden -> output
-			l2 = m.Syn1[s*points[d]:s*points[d]+s]
-
-			f = asm.Sdot(hidden, l2)
-			if f > 6.0 {
-				f = 1
-				g = float32(1.0-code) - 1
-			} else if f < -6.0 {
-				f = 0
-				g = float32(1.0-code) - 0
-			} else {
-				f = float32(math.Exp(float64(f)))
-				g = float32(1.0-code) - f/(f+1.0)
-			}
-			loss -= float64(g)
+			l2 := nn.InputVector(m.Syn1[s*points[d] : s*points[d]+s])
+			weights = append(weights, l2)
+			f := g.Dot(l2, hidden)
+			s := g.Sigmoid(f)
+			// set loss
+			s.DW[0] = float32(1.0-code) - s.W[0] // sigmoid crossentropy loss
+			loss += float64(s.DW[0])
 			lossCount++
-			g *= alpha
-			// 'g' is the gradient multiplied by the learning rate
-			// Propagate errors output -> hidden
-			asm.Saxpy(g, l2, hiddenError)
-			// Learn output weights
-			asm.Saxpy(g, hidden, l2)
-			asm.Sscale(1/asm.Snrm2(l2), l2)
+
+			//asm.Sscale(1/asm.Snrm2(l2), l2) // place output vectors to the surface of the unit sphere to avoid zero solution
 		}
-		// propagate error from penaltimate layer
-		for j, k = a, b; j < k; j++ {
-			if j == i {
-				continue
-			}
-			//p = 0
-			//l := len(sentence[j][1:])
-			for _, subword = range sentence[j][1:] {
-				//if l > 1 {
-					// get positional error
-				//	asm.Sxmuleyplusz(hiddenError, m.Syn0[s*subword:s*subword+s], m.Pos[s*p:s*p+s])
-					// get word error
-				//	asm.Sxmuleyplusz(hiddenError, m.Pos[s*p:s*p+s], m.Syn0[s*subword:s*subword+s])
-				//} else {
-					asm.Sxpy(hiddenError, m.Syn0[s*subword:s*subword+s])
-				//}
-				//p++
-			}
-			//p = 0
-			// learn input layer
-			//for _, subword = range sentence[j][1:] {
-				// learn positions
-			//	asm.Sxpy(posError[s*p:s*p+s], m.Pos[s*p:s*p+s])
-				// learn words
-			//	asm.Sxpy(wordError[s*p:s*p+s], m.Syn0[s*subword:s*subword+s])
-			//	p++
-			//}
+		// backpropagate network
+		g.Backward()
+		// learn weights
+		for _, weight := range weights {
+			asm.Saxpy(-alpha, weight.DW, weight.W)
 		}
-		asm.Sclean(hidden)
-		asm.Sclean(hiddenError)
-		//asm.Sclean(posError)
-		//asm.Sclean(wordError)
 	}
 	wc.c = float64(sentenceLength)
 	wc.e = loss / lossCount

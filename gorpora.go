@@ -12,6 +12,7 @@ import (
 	"github.com/vseledkin/gorpora/small_embed"
 	"github.com/vseledkin/gorpora/interleave"
 	"github.com/vseledkin/gorpora/tokenizer"
+	"github.com/vseledkin/gorpora/uniq"
 )
 
 func main() {
@@ -25,6 +26,7 @@ func main() {
 	rootCmd.AddCommand(small_embed.NNCommand)
 	rootCmd.AddCommand(interleave.Command)
 	rootCmd.AddCommand(tokenizer.WordTokenizerCommand)
+	rootCmd.AddCommand(uniq.UniqCommand)
 	if e := rootCmd.Execute(); e != nil {
 		log.Fatal(e)
 	}
